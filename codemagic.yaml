@@ -1,0 +1,45 @@
+workflows:
+  ios-app-store:
+    name: iOS App Store
+    max_build_duration: 60
+    integrations:
+      app_store_connect: "Greenit API"
+    environment:
+      groups:
+        - ios-signing
+      xcode: latest
+      vars:
+        APP_STORE_APPLE_ID: 1470195012
+    scripts:
+      - name: Initialize keychain
+        script: keychain initialize
+      - name: Fetch signing files from Apple
+        script: |
+          app-store-connect fetch-signing-files \
+            com.jbog.shinevilleparkcc \
+            --type IOS_APP_STORE \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --create
+      - name: Add certificates to keychain
+        script: keychain add-certificates
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Increment build number
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || echo 0)
+          LATEST=${LATEST:-0}
+          NEW=$((LATEST + 1))
+          echo "TestFlight latest build: $LATEST -> new build: $NEW"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW" shinevilleparkcc/Info.plist
+      - name: Build IPA
+        script: |
+          xcode-project build-ipa \
+            --project "shinevilleparkcc.xcodeproj" \
+            --scheme "shinevilleparkcc"
+      - name: Upload to TestFlight
+        script: |
+          app-store-connect publish \
+            --path $(find build/ios/ipa -name "*.ipa" | head -1)
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
